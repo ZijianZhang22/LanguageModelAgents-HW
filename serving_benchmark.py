@@ -5,7 +5,6 @@ import os
 import statistics
 import time
 
-os.environ.setdefault("VLLM_ATTENTION_BACKEND", "TRITON_ATTN")
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
 
 from transformers import AutoTokenizer
@@ -96,6 +95,7 @@ def main():
     p.add_argument("--output-dir", required=True)
     p.add_argument("--quantization", default="fp8")
     p.add_argument("--kv-cache-dtype", default="fp8")
+    p.add_argument("--attention-backend", default="TRITON_ATTN")
     p.add_argument("--gpu-memory-utilization", type=float, default=0.90)
     p.add_argument("--max-model-len", type=int, default=4096)
     p.add_argument("--prefill-lengths", default="128,256,512,1024,2048,3072")
@@ -109,9 +109,8 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     token_bank = make_token_bank(tokenizer)
-    attention_backend = os.environ.get("VLLM_ATTENTION_BACKEND", "auto")
     print("loading", args.model)
-    print("attention backend:", attention_backend)
+    print("attention backend:", args.attention_backend)
 
     llm = LLM(
         model=args.model,
@@ -123,6 +122,7 @@ def main():
         max_model_len=args.max_model_len,
         enable_prefix_caching=False,
         trust_remote_code=True,
+        attention_backend=args.attention_backend,
     )
 
     timed_generate(llm, [make_prompt(token_bank, 64)], SamplingParams(temperature=0.0, max_tokens=8, ignore_eos=True))
@@ -136,17 +136,15 @@ def main():
         row["name"] = args.name
         row["quantization"] = args.quantization
         row["kv_cache_dtype"] = args.kv_cache_dtype
-        row["attention_backend"] = attention_backend
+        row["attention_backend"] = args.attention_backend
 
     raw_path = os.path.join(args.output_dir, "raw.csv")
     summary_path = os.path.join(args.output_dir, "summary.csv")
     write_csv(raw_path, rows)
     write_csv(summary_path, summarize(rows))
 
-    config = vars(args)
-    config["attention_backend"] = attention_backend
     with open(os.path.join(args.output_dir, "config.json"), "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
+        json.dump(vars(args), f, indent=2)
 
     print("saved", raw_path)
     print("saved", summary_path)
