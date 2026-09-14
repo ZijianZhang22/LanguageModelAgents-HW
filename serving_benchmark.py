@@ -5,6 +5,12 @@ import os
 import statistics
 import time
 
+# Attention and token sampling are separate backends in vLLM.  On some
+# Blackwell/CUDA combinations the FlashInfer sampler can fail even when
+# attention itself is forced to Triton, so keep sampling on vLLM's native
+# path for a consistent benchmark environment.
+os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 
@@ -146,6 +152,7 @@ def main():
 
     print("loading", args.model)
     print("attention backend:", args.attention_backend)
+    print("flashinfer sampler:", os.environ["VLLM_USE_FLASHINFER_SAMPLER"])
     llm = LLM(
         model=args.model,
         tensor_parallel_size=1,
@@ -187,6 +194,7 @@ def main():
         row["quantization"] = args.quantization
         row["kv_cache_dtype"] = args.kv_cache_dtype
         row["attention_backend"] = args.attention_backend
+        row["flashinfer_sampler"] = os.environ["VLLM_USE_FLASHINFER_SAMPLER"]
 
     raw_path = os.path.join(args.output_dir, "raw.csv")
     summary_path = os.path.join(args.output_dir, "summary.csv")
@@ -194,6 +202,7 @@ def main():
     write_csv(summary_path, summarize(rows))
 
     config = vars(args)
+    config["flashinfer_sampler"] = os.environ["VLLM_USE_FLASHINFER_SAMPLER"]
     with open(os.path.join(args.output_dir, "config.json"), "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
 
