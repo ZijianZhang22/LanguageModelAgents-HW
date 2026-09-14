@@ -5,12 +5,6 @@ import os
 import statistics
 import time
 
-# Attention and token sampling are separate backends in vLLM.  On some
-# Blackwell/CUDA combinations the FlashInfer sampler can fail even when
-# attention itself is forced to Triton, so keep sampling on vLLM's native
-# path for a consistent benchmark environment.
-os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
-
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 
@@ -50,8 +44,6 @@ def run_prefill(llm, token_bank, lengths, batch_size, repeats):
 
     for length in lengths:
         prompts = [make_prompt(token_bank, length, i) for i in range(batch_size)]
-
-        # Warm up this prompt size once.
         timed_generate(llm, prompts, params)
 
         for rep in range(repeats):
@@ -78,8 +70,6 @@ def run_decode(llm, token_bank, concurrencies, prompt_len, output_len, repeats):
 
     for n in concurrencies:
         prompts = [make_prompt(token_bank, prompt_len, i) for i in range(n)]
-
-        # Warm up this concurrency once.
         timed_generate(llm, prompts, params)
 
         for rep in range(repeats):
@@ -134,7 +124,6 @@ def main():
     p.add_argument("--output-dir", required=True)
     p.add_argument("--quantization", default="fp8")
     p.add_argument("--kv-cache-dtype", default="fp8")
-    p.add_argument("--attention-backend", default="TRITON_ATTN")
     p.add_argument("--gpu-memory-utilization", type=float, default=0.90)
     p.add_argument("--max-model-len", type=int, default=4096)
     p.add_argument("--prefill-lengths", default="128,256,512,1024,2048,3072")
@@ -151,8 +140,6 @@ def main():
     token_bank = make_token_bank(tokenizer)
 
     print("loading", args.model)
-    print("attention backend:", args.attention_backend)
-    print("flashinfer sampler:", os.environ["VLLM_USE_FLASHINFER_SAMPLER"])
     llm = LLM(
         model=args.model,
         tensor_parallel_size=1,
@@ -163,10 +150,8 @@ def main():
         max_model_len=args.max_model_len,
         enable_prefix_caching=False,
         trust_remote_code=True,
-        attention_backend=args.attention_backend,
     )
 
-    # One small model warm-up before timing anything.
     warmup_prompt = [make_prompt(token_bank, 64)]
     warmup_params = SamplingParams(temperature=0.0, max_tokens=8, ignore_eos=True)
     timed_generate(llm, warmup_prompt, warmup_params)
@@ -193,8 +178,6 @@ def main():
         row["name"] = args.name
         row["quantization"] = args.quantization
         row["kv_cache_dtype"] = args.kv_cache_dtype
-        row["attention_backend"] = args.attention_backend
-        row["flashinfer_sampler"] = os.environ["VLLM_USE_FLASHINFER_SAMPLER"]
 
     raw_path = os.path.join(args.output_dir, "raw.csv")
     summary_path = os.path.join(args.output_dir, "summary.csv")
@@ -202,7 +185,6 @@ def main():
     write_csv(summary_path, summarize(rows))
 
     config = vars(args)
-    config["flashinfer_sampler"] = os.environ["VLLM_USE_FLASHINFER_SAMPLER"]
     with open(os.path.join(args.output_dir, "config.json"), "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
 
