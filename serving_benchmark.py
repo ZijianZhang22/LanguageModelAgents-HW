@@ -128,6 +128,7 @@ def main():
     p.add_argument("--output-dir", required=True)
     p.add_argument("--quantization", default="fp8")
     p.add_argument("--kv-cache-dtype", default="fp8")
+    p.add_argument("--attention-backend", default="TRITON_ATTN")
     p.add_argument("--gpu-memory-utilization", type=float, default=0.90)
     p.add_argument("--max-model-len", type=int, default=4096)
     p.add_argument("--prefill-lengths", default="128,256,512,1024,2048,3072")
@@ -144,6 +145,7 @@ def main():
     token_bank = make_token_bank(tokenizer)
 
     print("loading", args.model)
+    print("attention backend:", args.attention_backend)
     llm = LLM(
         model=args.model,
         tensor_parallel_size=1,
@@ -154,6 +156,7 @@ def main():
         max_model_len=args.max_model_len,
         enable_prefix_caching=False,
         trust_remote_code=True,
+        attention_backend=args.attention_backend,
     )
 
     # One small model warm-up before timing anything.
@@ -183,6 +186,7 @@ def main():
         row["name"] = args.name
         row["quantization"] = args.quantization
         row["kv_cache_dtype"] = args.kv_cache_dtype
+        row["attention_backend"] = args.attention_backend
 
     raw_path = os.path.join(args.output_dir, "raw.csv")
     summary_path = os.path.join(args.output_dir, "summary.csv")
